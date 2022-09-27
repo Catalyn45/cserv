@@ -2,19 +2,32 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
 #include "logging.h"
 #include "server/server.h"
 
+struct cserv_server* server;
+
+void close_handler(int signo) {
+    (void) signo;
+    log_info("closing server");
+    if (server) {
+        cserv_free(server);
+    }
+
+    exit(0);
+}
 
 int parse_args(int argc, char* argv[], struct server_args* out_args) {
     *out_args = (struct server_args) {
-        .listen_addr = "0.0.0.0",
+        .listen_ip = "0.0.0.0",
         .listen_port = 80
     };
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--listen") == 0) {
-            out_args->listen_addr = argv[i+1];
+            out_args->listen_ip = argv[i+1];
             ++i;
         } else if (strcmp(argv[i], "--port") == 0) {
             out_args->listen_port = atoi(argv[i+1]);
@@ -38,10 +51,15 @@ int main(int argc, char* argv[]) {
     }
 
     log_info("initiating server");
-    struct cserv_server* server = cserv_server(&args);
+    server = cserv_server(&args);
     if (!server) {
         log_error("error creating the web server");
         return -1;
+    }
+
+    if (signal(SIGINT, close_handler) == SIG_ERR) {
+        log_errno("error creating close handler");
+        goto free_serv;
     }
 
     log_info("starting server");
@@ -49,9 +67,6 @@ int main(int argc, char* argv[]) {
         log_error("error starting server");
         goto free_serv;
     }
-
-    log_info("stopping server");
-    cserv_stop(server);
 
     log_info("freeing server");
     cserv_free(server);

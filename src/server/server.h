@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 struct server_args {
-    char* listen_addr;
+    char* listen_ip;
     uint16_t listen_port;
 };
 
