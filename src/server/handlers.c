@@ -1,10 +1,11 @@
 #include <unistd.h>
 #include <sys/socket.h>
+#include <stdlib.h>
 #include "handlers.h"
 #include "../logging.h"
 #include "../parser/parser.h"
+#include "../utils.h"
 
-static const char test_response[] = "HTTP/1.1 200 OK\r\nContent-Length: 48\r\n\r\n<html><body><h1> Hello world </h1></body></html>";
 #define BUFFER_SIZE 4096
 
 int handle_client(int client) {
@@ -27,13 +28,29 @@ int handle_client(int client) {
         goto close_client;
     }
 
-    char path[BUFFER_SIZE];
-    strncpy(path, header.path.data, header.path.length);
-    path[header.path.length] = '\0';
+    char path[BUFFER_SIZE] = ".";
+    strncat(path, header.path.data, header.path.length);
 
     log_info("path: %s", path);
+    int code = OK;
 
-    res = send(client, test_response, sizeof test_response, 0);
+    char* content = read_file(path);
+    if (!content) {
+        log_warning("error at reading file");
+        code = NOT_FOUND;
+    }
+
+    char* response = construct_response(content, code);
+    free(content);
+
+    if (!response) {
+        log_warning("error creating response");
+        goto close_client;
+    }
+
+    res = send(client, response, strlen(response), 0);
+    free(response);
+
     if (res == -1) {
         log_warning("error at send");
         goto close_client;

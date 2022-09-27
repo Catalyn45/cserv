@@ -1,3 +1,5 @@
+#include <stdlib.h>
+#include <unistd.h>
 #include "parser.h"
 #include "../logging.h"
 
@@ -132,4 +134,46 @@ int parse_request(const char* request, struct http_header* out_header, struct ht
     out_body->length = strlen(request) - (out_body->data - request);
 
     return 0;
+}
+
+static const char* str_codes[] = {
+    "200 OK",
+    "400 BAD REQUEST",
+    "404 NOT FOUND"
+};
+
+#define BUFFER_SIZE 4096 * 2
+
+char* construct_response(const char* content, uint16_t code) {
+    static const char response[] = "HTTP/1.1 %s\r\nContent-Length: %d\r\n\r\n%s";
+    static const char bad_response[] = "HTTP/1.1 %s\r\n\r\n";
+
+    char* buffer = malloc(BUFFER_SIZE * sizeof *buffer);
+    if (!buffer) {
+        log_error("error allocating memory");
+        return NULL;
+    }
+
+    int res = 0;
+
+    if (content) {
+        res = snprintf(buffer, BUFFER_SIZE, response, str_codes[code], (int)strlen(content), content);
+        if ((unsigned int)res <= sizeof response) {
+            log_error("error constructing response");
+            goto free_buffer;
+        }
+    } else {
+        res = snprintf(buffer, BUFFER_SIZE, bad_response, str_codes[code]);
+        if ((unsigned int)res <= sizeof bad_response) {
+            log_error("error constructing response");
+            goto free_buffer;
+        }
+    }
+
+    return buffer;
+
+free_buffer:
+    free(buffer);
+
+    return NULL;
 }

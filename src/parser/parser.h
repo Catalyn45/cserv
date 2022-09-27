@@ -17,6 +17,12 @@ enum methods {
     POST
 };
 
+enum codes {
+    OK,
+    BAD_REQUESTS,
+    NOT_FOUND
+};
+
 struct http_header {
     struct {
         const char* data;
@@ -34,5 +40,7 @@ struct http_body {
 
 int parse_config(const char* path, struct config* out_config);
 int parse_request(const char* request, struct http_header* out_header, struct http_body* out_body);
+
+char* construct_response(const char* content, uint16_t code);
 
 #endif
