@@ -4,7 +4,7 @@
 #include "utils.h"
 #include "logging.h"
 
-char* read_file(const char* path) {
+char* read_file(const char* path, uint32_t* out_size) {
     int file = open(path, O_RDONLY);
     if(file == -1) {
         log_errno("unable to open file: %s", path);
@@ -28,6 +28,8 @@ char* read_file(const char* path) {
     close(file);
 
     content[size] = '\0';
+    *out_size = size;
+
     return content;
 
 close_file:

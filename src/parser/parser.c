@@ -53,12 +53,12 @@ static int parse_header (
     *out_header_value = header_value;
     *out_header_value_len = header_value_len;
 
-    *index += (endline + 4) - header;
+    *index += (endline + 2) - header;
 
-    return 0;
+    return PARSING_CONTINUE;
 }
 
-int parse_word(const char* buffer, uint32_t* index, const char** out_word, uint32_t* out_word_len) {
+static void parse_word(const char* buffer, uint32_t* index, const char** out_word, uint32_t* out_word_len) {
     const char* cursor = buffer + *index;
 
     while(*cursor == ' ')
@@ -75,8 +75,6 @@ int parse_word(const char* buffer, uint32_t* index, const char** out_word, uint3
     *out_word_len = length;
 
     *index += cursor - buffer;
-
-    return 0;
 }
 
 int parse_request(const char* request, struct http_header* out_header, struct http_body* out_body) {
@@ -88,8 +86,15 @@ int parse_request(const char* request, struct http_header* out_header, struct ht
 
     if(strncmp(method, "GET", method_len) == 0) {
         out_header->method = GET;
-    } else {
+    } else if(strncmp(method, "POST", method_len) == 0) {
         out_header->method = POST;
+    } else {
+        char buffer[10];
+        strncpy(buffer, method, method_len);
+        buffer[method_len] = '\0';
+        log_warning("unrecognized method: %s", buffer);
+
+        return -1;
     }
 
     const char* path;
@@ -112,6 +117,7 @@ int parse_request(const char* request, struct http_header* out_header, struct ht
     const char* header_value;
     uint32_t header_value_len;
 
+    out_header->content_length = 0;
     while(res == PARSING_CONTINUE) {
         res = parse_header(request, &index, &header, &header_len, &header_value, &header_value_len);
         if (res == PARSING_FAILED) {
@@ -120,18 +126,27 @@ int parse_request(const char* request, struct http_header* out_header, struct ht
         }
 
         if (strncmp(header, "Connection", header_len) == 0) {
-            if (strncmp(header_value, "Close", header_value_len) == 0) {
+            if (strncmp(header_value, "close", header_value_len) == 0) {
                 out_header->connection = CLOSE;
-            } else {
+            } else if(strncmp(header_value, "keep-alive", header_value_len) == 0) {
                 out_header->connection = KEEP_ALIVE;
+            } else {
+                char buffer[10];
+                strncpy(buffer, header_value, header_value_len);
+                log_warning("unrecognized connection: %s", buffer);
+                return -1;
             }
+        } else if (strncmp(header, "Content-Length", header_len) == 0) {
+            char str_number[20];
+            strncpy(str_number, header_value, header_value_len);
+            out_header->content_length = atoi(str_number);
         }
     }
 
     index += 2;
 
-    out_body->data = &request[index];
-    out_body->length = strlen(request) - (out_body->data - request);
+    out_body->data = request + index;
+    out_body->length = strlen(request) - index;
 
     return 0;
 }
@@ -144,7 +159,7 @@ static const char* str_codes[] = {
 
 #define BUFFER_SIZE 4096 * 2
 
-char* construct_response(const char* content, uint16_t code) {
+char* construct_response(const char* content, uint16_t code, uint32_t* out_length) {
     static const char response[] = "HTTP/1.1 %s\r\nContent-Length: %d\r\n\r\n%s";
     static const char bad_response[] = "HTTP/1.1 %s\r\n\r\n";
 
@@ -155,8 +170,7 @@ char* construct_response(const char* content, uint16_t code) {
     }
 
     int res = 0;
-
-    if (content) {
+    if (code < BAD_REQUEST) {
         res = snprintf(buffer, BUFFER_SIZE, response, str_codes[code], (int)strlen(content), content);
         if ((unsigned int)res <= sizeof response) {
             log_error("error constructing response");
@@ -170,6 +184,7 @@ char* construct_response(const char* content, uint16_t code) {
         }
     }
 
+    *out_length = res;
     return buffer;
 
 free_buffer:

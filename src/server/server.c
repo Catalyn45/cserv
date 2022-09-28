@@ -40,6 +40,12 @@ struct cserv_server* cserv_server(const struct server_args* args) {
         goto free_server;
     }
 
+    int reuse = 1;
+    if(setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) != 0) {
+        log_errno("error seting socket option");
+        goto close_socket;
+    }
+
     int res = init_listen_addr(args->listen_ip, args->listen_port, &server->listen_address);
     if (res != 0) {
         log_error("error initializing listening address");
@@ -90,10 +96,7 @@ int cserv_start(struct cserv_server* server) {
         }
 
         log_info("client connected");
-        if (handle_client(client) != 0) {
-            log_error("error handling client");
-            return -1;
-        }
+        handle_client(client);
     }
 
     return 0;

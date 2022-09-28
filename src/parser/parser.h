@@ -19,7 +19,7 @@ enum methods {
 
 enum codes {
     OK,
-    BAD_REQUESTS,
+    BAD_REQUEST,
     NOT_FOUND
 };
 
@@ -31,6 +31,7 @@ struct http_header {
 
     int method;
     int connection;
+    uint32_t content_length;
 };
 
 struct http_body {
@@ -38,9 +39,15 @@ struct http_body {
     uint32_t length;
 };
 
+struct http_response {
+    int code;
+    const char* data;
+    uint32_t length;
+};
+
 int parse_config(const char* path, struct config* out_config);
 int parse_request(const char* request, struct http_header* out_header, struct http_body* out_body);
 
-char* construct_response(const char* content, uint16_t code);
+char* construct_response(const char* content, uint16_t code, uint32_t* out_length);
 
 #endif
