@@ -6,9 +6,13 @@
 #include "../logging.h"
 #include "server.h"
 #include "handlers.h"
+#include "../threadpool.h"
+#include "../cache/cache.h"
 
 struct cserv_server {
     const struct server_args* args;
+    struct cache* cache;
+    struct thread_pool* pool;
     struct sockaddr_in listen_address;
     int listen_socket;
 };
@@ -58,12 +62,29 @@ struct cserv_server* cserv_server(const struct server_args* args) {
         goto close_socket;
     }
 
+    struct cache* memory_cache = cache(0);
+    if (!memory_cache) {
+        log_error("error creating cache");
+        goto close_socket;
+    }
+
+    struct thread_pool* pool = thread_pool(0);
+    if (!pool) {
+        log_error("error creating thread pool");
+        goto free_cache;
+    }
+
     *server = (struct cserv_server) {
         .args = args,
+        .cache = memory_cache,
+        .pool = pool,
         .listen_socket = server_socket
     };
 
     return server;
+
+free_cache:
+    cache_free(memory_cache);
 
 close_socket:
     close(server_socket);
@@ -83,7 +104,15 @@ int cserv_start(struct cserv_server* server) {
         return -1;
     }
 
+    log_info("starting thread pool");
+    int res = thread_pool_start(server->pool);
+    if (res != 0) {
+        log_error("error starting thread");
+        return -1;
+    }
+
     log_info("server started, listening for clients");
+
     while (1) {
         int client = accept(server_socket, NULL, NULL);
         if (client == -1) {
@@ -96,7 +125,7 @@ int cserv_start(struct cserv_server* server) {
         }
 
         log_info("client connected");
-        handle_client(client);
+        handle_client(server->cache, server->pool, client);
     }
 
     return 0;
@@ -104,6 +133,8 @@ int cserv_start(struct cserv_server* server) {
 
 void cserv_free(struct cserv_server* server) {
     close(server->listen_socket);
+    cache_free(server->cache);
+    thread_pool_free(server->pool);
 
     free(server);
 }

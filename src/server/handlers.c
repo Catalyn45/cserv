@@ -3,13 +3,14 @@
 #include <stdlib.h>
 #include "handlers.h"
 #include "routes.h"
+#include "../security/path_checkers.h"
 #include "../logging.h"
 #include "../parser/parser.h"
 #include "../utils.h"
 
 #define BUFFER_SIZE 4096
 
-static int file_handler(const struct http_header* header, struct http_response* out_response) {
+static int file_handler(const struct http_header* header, struct http_response* out_response, struct cache* memory_cache) {
     if(header->method != GET)
         return -1;
 
@@ -23,8 +24,8 @@ static int file_handler(const struct http_header* header, struct http_response* 
     log_info("path: %s", path);
     int code = OK;
 
-    uint32_t length = 0;
-    char* content = read_file(path, &length);
+    uint32_t length = strlen(path);
+    char* content = cache_get_file(memory_cache, path, &length);
     if (!content) {
         log_warning("error at reading file");
         code = NOT_FOUND;
@@ -37,23 +38,33 @@ static int file_handler(const struct http_header* header, struct http_response* 
     return 0;
 }
 
-static int handle_request(const struct http_header* header, const struct http_body* body, struct http_response* out_response) {
-    uint32_t index = 0;
-    route_handler_t handler = route_handlers[index];
+static int handle_request(const struct http_header* header, const struct http_body* body, struct http_response* out_response, struct cache* memory_cache) {
+    path_checker_t* checker = path_checkers;
+    while(*checker) {
+        if ((*checker)(header->path.data, header->path.length) == 0)
+            goto send_400;
 
-    while (handler) {
-        int res = handler(header, body, out_response);
+        ++checker;
+    }
+
+    route_handler_t* handler = route_handlers;
+    while (*handler) {
+        int res = (*handler)(header, body, out_response);
         if (res == 0)
             return 0;
 
-        handler = route_handlers[++index];
+        ++handler;
     }
 
-    if(file_handler(header, out_response) != 0) {
-        out_response->code = BAD_REQUEST;
-        out_response->data = NULL;
-        out_response->length = 0;
-    }
+    if(file_handler(header, out_response, memory_cache) != 0)
+        goto send_400;
+
+    return 0;
+
+send_400:
+    out_response->code = BAD_REQUEST;
+    out_response->data = NULL;
+    out_response->length = 0;
 
     return 0;
 }
@@ -125,7 +136,17 @@ static int handle_response(int client, const struct http_response* response) {
     return 0;
 }
 
-void* handle_client(int client) {
+struct task_args {
+    int client;
+    struct cache* cache;
+};
+
+static int task_handler(void* args) {
+    struct task_args* t_args = args;
+    int client = t_args->client;
+    struct cache* memory_cache = t_args->cache;
+    free(t_args);
+
     char request[BUFFER_SIZE];
 
     struct http_header header;
@@ -139,7 +160,7 @@ void* handle_client(int client) {
 
     struct http_response response;
     log_debug("handling request");
-    res = handle_request(&header, &body, &response);
+    res = handle_request(&header, &body, &response, memory_cache);
     if (res != 0) {
         log_warning("failed to handle request");
         goto close_client;
@@ -154,6 +175,27 @@ void* handle_client(int client) {
 
 close_client:
     close(client);
+
+    return -1;
+}
+
+void* handle_client(struct cache* memory_cache, struct thread_pool* pool, int client) {
+    struct task_args* t_args = malloc(sizeof t_args);
+    if (!t_args) {
+        log_error("error alocating memory");
+        return NULL;
+    }
+
+    *t_args = (struct task_args) {
+        .client = client,
+        .cache = memory_cache
+    };
+
+    int res = thread_pool_enqueue(pool, task_handler, t_args);
+    if (res != 0) {
+        log_error("error enqueueing task");
+        return NULL;
+    }
 
     return NULL;
 }

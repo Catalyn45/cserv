@@ -4,10 +4,13 @@
 #include "utils.h"
 #include "logging.h"
 
-char* read_file(const char* path, uint32_t* out_size) {
-    int file = open(path, O_RDONLY);
+char* read_file(const char* path, uint32_t* length) {
+    char buffer[256];
+    strncpy(buffer, path, *length);
+
+    int file = open(buffer, O_RDONLY);
     if(file == -1) {
-        log_errno("unable to open file: %s", path);
+        log_errno("unable to open file: %s", buffer);
         return NULL;
     }
 
@@ -28,7 +31,7 @@ char* read_file(const char* path, uint32_t* out_size) {
     close(file);
 
     content[size] = '\0';
-    *out_size = size;
+    *length = size;
 
     return content;
 
