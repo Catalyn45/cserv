@@ -84,8 +84,9 @@ char* cache_get_file(struct cache* cache, const char* path, uint32_t* length) {
     STAILQ_FOREACH(item, head, entries) {
         if(item->hash == hash) {
             *length = item->length;
+            char* content = memndup(item->data, *length);
             pthread_mutex_unlock(&cache->lock);
-            return memndup(item->data, *length);
+            return content;
         }
     }
 
