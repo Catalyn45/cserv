@@ -31,7 +31,7 @@ char* read_file(const char* path, uint32_t* length) {
     close(file);
 
     content[size] = '\0';
-    *length = size;
+    *length = size + 1;
 
     return content;
 
