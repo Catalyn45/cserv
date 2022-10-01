@@ -7,6 +7,7 @@
 char* read_file(const char* path, uint32_t* length) {
     char buffer[256];
     strncpy(buffer, path, *length);
+    buffer[*length] = '\0';
 
     int file = open(buffer, O_RDONLY);
     if(file == -1) {

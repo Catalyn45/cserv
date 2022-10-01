@@ -122,6 +122,7 @@ void thread_pool_free(struct thread_pool* pool) {
     for (uint32_t i = 0; i < pool->n_threads; ++i) {
         log_debug("freeing thread %d", i);
         thread_pool_enqueue(pool, exit_task, NULL);
+        close(pool->threads[i].sock);
         pthread_join(pool->threads[i].thread_handle,  NULL);
     }
 
