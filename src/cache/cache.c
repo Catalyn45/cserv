@@ -7,7 +7,7 @@
 #include "../utils.h"
 #include "cache.h"
 
-#define DEFAULT_SIZE 20 * 1024 * 1024 // 20 MB
+#define DEFAULT_SIZE 300  // 20 MB
 
 #define BUCKETS 50
 

@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <sys/sysinfo.h>
+#include <signal.h>
 #include "logging.h"
 #include "threadpool.h"
 
@@ -112,9 +113,15 @@ int thread_pool_start(struct thread_pool* pool) {
     return 0;
 }
 
+static int exit_task(void* args) {
+    (void)args;
+    pthread_exit(NULL);
+}
+
 void thread_pool_free(struct thread_pool* pool) {
     for (uint32_t i = 0; i < pool->n_threads; ++i) {
-        pthread_exit(&pool->threads[i].thread_handle);
+        log_debug("freeing thread %d", i);
+        thread_pool_enqueue(pool, exit_task, NULL);
         pthread_join(pool->threads[i].thread_handle,  NULL);
     }
 

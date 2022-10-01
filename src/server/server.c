@@ -132,9 +132,15 @@ int cserv_start(struct cserv_server* server) {
 }
 
 void cserv_free(struct cserv_server* server) {
+    log_info("closing listening socket");
     close(server->listen_socket);
+
+    log_info("freeing cache");
     cache_free(server->cache);
+
+    log_info("freeing thread pool");
     thread_pool_free(server->pool);
 
+    log_info("free server");
     free(server);
 }
