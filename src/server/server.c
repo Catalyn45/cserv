@@ -3,6 +3,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include "../logging.h"
 #include "server.h"
 #include "handlers.h"
@@ -25,6 +26,16 @@ static int init_listen_addr(const char* ip, uint16_t port, struct sockaddr_in* o
 
     if (inet_pton(AF_INET, ip, &out_addr->sin_addr) != 1) {
         log_errno("error converting ip to addr");
+        return -1;
+    }
+
+    return 0;
+}
+
+static inline int make_socket_nonblock(int sock) {
+    int status = fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
+    if (status == -1){
+        log_error("error making socket nonblocking");
         return -1;
     }
 
@@ -124,7 +135,13 @@ int cserv_start(struct cserv_server* server) {
             log_warning("connection aborted");
         }
 
-        log_info("client connected");
+        res = make_socket_nonblock(client);
+        if (res != 0) {
+            log_error("error making socket nonblock");
+            close(client);
+            return -1;
+        }
+
         handle_client(server->cache, server->pool, client);
     }
 

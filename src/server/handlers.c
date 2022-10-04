@@ -1,12 +1,14 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <stdlib.h>
+#include <sys/epoll.h>
 #include "handlers.h"
 #include "routes.h"
 #include "../security/path_checkers.h"
 #include "../logging.h"
 #include "../parser/parser.h"
 #include "../utils.h"
+#include "../threadpool.h"
 
 #define BUFFER_SIZE 4096
 
@@ -136,16 +138,11 @@ static int handle_response(int client, const struct http_response* response) {
     return 0;
 }
 
-struct task_args {
-    int client;
-    struct cache* cache;
-};
+static int task_handler(int client, uint32_t what, void* args) {
+    struct cache* memory_cache = args;
 
-static int task_handler(void* args) {
-    struct task_args* t_args = args;
-    int client = t_args->client;
-    struct cache* memory_cache = t_args->cache;
-    free(t_args);
+    if (!(what & EPOLLIN))
+        return 0;
 
     char request[BUFFER_SIZE];
 
@@ -174,24 +171,19 @@ static int task_handler(void* args) {
     }
 
 close_client:
-    close(client);
 
-    return -1;
+    return TASK_CLOSE;
 }
 
 void* handle_client(struct cache* memory_cache, struct thread_pool* pool, int client) {
-    struct task_args* t_args = malloc(sizeof t_args);
-    if (!t_args) {
-        log_error("error alocating memory");
-        return NULL;
-    }
-
-    *t_args = (struct task_args) {
-        .client = client,
-        .cache = memory_cache
+    struct event_context context = {
+        .fd = client,
+        .what = EPOLLIN,
+        .task = task_handler,
+        .args = memory_cache
     };
 
-    int res = thread_pool_enqueue(pool, task_handler, t_args);
+    int res = thread_pool_enqueue(pool, &context);
     if (res != 0) {
         log_error("error enqueueing task");
         return NULL;
